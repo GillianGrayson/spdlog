@@ -403,7 +403,7 @@ inline bool isfinite(T value) {
   return std::isfinite(value);
 }
 
-// Convers value to int and checks that it's in the range [0, upper).
+// Converts value to int and checks that it's in the range [0, upper).
 template <typename T, FMT_ENABLE_IF(std::is_integral<T>::value)>
 inline int to_nonnegative_int(T value, int upper) {
   FMT_ASSERT(value >= 0 && value <= upper, "invalid value");
@@ -582,8 +582,8 @@ struct chrono_formatter {
   void write(Rep value, int width) {
     write_sign();
     if (isnan(value)) return write_nan();
-    uint32_or_64_t<int> n = to_unsigned(
-        to_nonnegative_int(value, (std::numeric_limits<int>::max)()));
+    uint32_or_64_or_128_t<int> n =
+        to_unsigned(to_nonnegative_int(value, max_value<int>()));
     int num_digits = internal::count_digits(n);
     if (width > num_digits) out = std::fill_n(out, width - num_digits, '0');
     out = format_decimal<char_type>(out, n, num_digits);
@@ -728,7 +728,7 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
 
   struct spec_handler {
     formatter& f;
-    basic_parse_context<Char>& context;
+    basic_format_parse_context<Char>& context;
     basic_string_view<Char> format_str;
 
     template <typename Id> FMT_CONSTEXPR arg_ref_type make_arg_ref(Id arg_id) {
@@ -738,8 +738,7 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
 
     FMT_CONSTEXPR arg_ref_type make_arg_ref(basic_string_view<Char> arg_id) {
       context.check_arg_id(arg_id);
-      const auto str_val = internal::string_view_metadata(format_str, arg_id);
-      return arg_ref_type(str_val);
+      return arg_ref_type(arg_id);
     }
 
     FMT_CONSTEXPR arg_ref_type make_arg_ref(internal::auto_id) {
@@ -750,7 +749,7 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
     void on_fill(Char fill) { f.specs.fill[0] = fill; }
     void on_align(align_t align) { f.specs.align = align; }
     void on_width(unsigned width) { f.specs.width = width; }
-    void on_precision(unsigned precision) { f.precision = precision; }
+    void on_precision(unsigned _precision) { f.precision = _precision; }
     void end_precision() {}
 
     template <typename Id> void on_dynamic_width(Id arg_id) {
@@ -762,13 +761,13 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
     }
   };
 
-  using iterator = typename basic_parse_context<Char>::iterator;
+  using iterator = typename basic_format_parse_context<Char>::iterator;
   struct parse_range {
     iterator begin;
     iterator end;
   };
 
-  FMT_CONSTEXPR parse_range do_parse(basic_parse_context<Char>& ctx) {
+  FMT_CONSTEXPR parse_range do_parse(basic_format_parse_context<Char>& ctx) {
     auto begin = ctx.begin(), end = ctx.end();
     if (begin == end || *begin == '}') return {begin, begin};
     spec_handler handler{*this, ctx, format_str};
@@ -789,7 +788,7 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
  public:
   formatter() : precision(-1) {}
 
-  FMT_CONSTEXPR auto parse(basic_parse_context<Char>& ctx)
+  FMT_CONSTEXPR auto parse(basic_format_parse_context<Char>& ctx)
       -> decltype(ctx.begin()) {
     auto range = do_parse(ctx);
     format_str = basic_string_view<Char>(
@@ -806,10 +805,10 @@ struct formatter<std::chrono::duration<Rep, Period>, Char> {
     auto out = std::back_inserter(buf);
     using range = internal::output_range<decltype(ctx.out()), Char>;
     internal::basic_writer<range> w(range(ctx.out()));
-    internal::handle_dynamic_spec<internal::width_checker>(
-        specs.width, width_ref, ctx, format_str.begin());
+    internal::handle_dynamic_spec<internal::width_checker>(specs.width,
+                                                           width_ref, ctx);
     internal::handle_dynamic_spec<internal::precision_checker>(
-        precision, precision_ref, ctx, format_str.begin());
+        precision, precision_ref, ctx);
     if (begin == end || *begin == '}') {
       out = internal::format_chrono_duration_value(out, d.count(), precision);
       internal::format_chrono_duration_unit<Period>(out);
